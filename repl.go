@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -22,10 +23,11 @@ type config struct {
 		Name string `json:"name"`
 		URL  string `json:"url"`
 	} `json:"results"`
+	Pokedex map[string]Pokemon
 }
 
 type locationDetails struct {
-	Id                   uint32 `json:"id"`
+	ID                   uint32 `json:"id"`
 	Name                 string `json:"name"`
 	GameIndex            uint32 `json:"game_index"`
 	EncounterMethodRates []struct {
@@ -80,6 +82,61 @@ type locationDetails struct {
 	} `json:"pokemon_encounters"`
 }
 
+type Pokemon struct {
+	ID             int    `json:"id"`
+	Name           string `json:"name"`
+	BaseExperience int    `json:"base_experience"`
+	Height         int    `json:"height"`
+	IsDefault      bool   `json:"is_default"`
+	Order          int    `json:"order"`
+	Weight         int    `json:"weight"`
+	Abilities      []struct {
+		IsHidden bool `json:"is_hidden"`
+		Slot     int  `json:"slot"`
+		Ability  struct {
+			Name string `json:"name"`
+			URL  string `json:"url"`
+		} `json:"ability"`
+	} `json:"abilities"`
+	Forms []struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"forms"`
+	GameIndeces []struct {
+		GameIndex int `json:"game_index"`
+		Version   struct {
+			Name string `json:"name"`
+			URL  string `json:"url"`
+		} `json:"version"`
+	} `json:"game_indices"`
+	HeldItems []struct {
+		Item struct {
+			Name string `json:"name"`
+			URL  string `json:"url"`
+		}
+		VersionDetails         []struct{} `json:"version_details"`
+		LocationAreaEncounters string     `json:"location_area_encounters"`
+	} `json:"held_items"`
+	Moves []struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"moves"`
+	Species struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"species"`
+	Sprites struct{} `json:"sprites"`
+	Cries   struct{} `json:"cries"`
+	Stats   []struct {
+		Slot int `json:"slot"`
+		Type struct {
+			Name string `json:"name"`
+			URL  string `json:"url"`
+		} `json:"type"`
+	} `json:"stats"`
+	PastAbilities []struct{} `json:"past_abilities"`
+}
+
 type cliCommand struct {
 	name        string
 	description string
@@ -106,9 +163,15 @@ func REPL(scanner *bufio.Scanner) {
 		Next:     "https://pokeapi.co/api/v2/location-area?offset=0&limit=20",
 		Previous: "",
 		Cache:    cache,
+		Pokedex:  map[string]Pokemon{},
 	}
 
 	commands = map[string]cliCommand{
+		"catch": {
+			name:        "catch",
+			description: "Catch a Pokemon by name",
+			callback:    commandCatch,
+		},
 		"exit": {
 			name:        "exit",
 			description: "Exit the application",
@@ -288,16 +351,11 @@ func commandExplore(cfg *config, idOrName string) error {
 		fmt.Println("Cache hit!")
 		value = val
 	} else {
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return fmt.Errorf("unable to generate request: %w", err)
-		}
-
-		client := http.Client{}
-		res, err := client.Do(req)
+		res, err := http.Get(url)
 		if err != nil {
 			return fmt.Errorf("network Error: %w", err)
 		}
+
 		defer res.Body.Close()
 
 		val, err := io.ReadAll(res.Body)
@@ -318,6 +376,50 @@ func commandExplore(cfg *config, idOrName string) error {
 	}
 	for _, encounter := range data.PokemonEncounters {
 		fmt.Printf("- %s\n", encounter.Pokemon.Name)
+	}
+
+	return nil
+}
+
+func commandCatch(cfg *config, name string) error {
+	if name == "" {
+		return fmt.Errorf("please provide a Pokemon name to catch")
+	}
+
+	fmt.Printf("Throwing a Pokeball at %s...\n", name)
+
+	url := "https://pokeapi.co/api/v2/pokemon/" + name
+
+	var value []byte
+	if val, found := cfg.Cache.Get(url); found {
+		fmt.Println("Cache hit!")
+		value = val
+	} else {
+		res, err := http.Get(url)
+		if err != nil {
+			return fmt.Errorf("network Error: %w", err)
+		}
+		defer res.Body.Close()
+
+		val, err := io.ReadAll(res.Body)
+		if err != nil {
+			return fmt.Errorf("unable to read response body: %w", err)
+		}
+		value = val
+	}
+
+	var pokemonStats Pokemon
+	if err := json.Unmarshal(value, &pokemonStats); err != nil {
+		return fmt.Errorf("unable to decode response: %w", err)
+	}
+
+	experience := pokemonStats.BaseExperience
+	chances := float32(rand.Intn(experience)) / float32(experience)
+
+	didCatch := chances > 0.75
+	if didCatch {
+		cfg.Pokedex[name] = pokemonStats
+		fmt.Printf("You have caught %s!\n", name)
 	}
 
 	return nil
