@@ -128,12 +128,20 @@ type Pokemon struct {
 	Sprites struct{} `json:"sprites"`
 	Cries   struct{} `json:"cries"`
 	Stats   []struct {
+		BaseStat int `json:"base_stat"`
+		Effort   int `json:"effort"`
+		Stat     struct {
+			Name string `json:"name"`
+			URL  string `json:"url"`
+		} `json:"stat"`
+	} `json:"stats"`
+	Types []struct {
 		Slot int `json:"slot"`
 		Type struct {
 			Name string `json:"name"`
 			URL  string `json:"url"`
 		} `json:"type"`
-	} `json:"stats"`
+	} `json:"types"`
 	PastAbilities []struct{} `json:"past_abilities"`
 }
 
@@ -182,10 +190,20 @@ func REPL(scanner *bufio.Scanner) {
 			description: "Display the Pokemon which can be found in a given location area by id or name",
 			callback:    commandExplore,
 		},
+		"inspect": {
+			name:        "inspect",
+			description: "Inspect a caught Pokemon by name",
+			callback:    commandInspect,
+		},
 		"help": {
 			name:        "help",
 			description: "Displays a help message",
 			callback:    commandHelp,
+		},
+		"pokedex": {
+			name:        "pokedex",
+			description: "Lists all caught Pokemon in your Pokedex",
+			callback:    commandPokedex,
 		},
 		"map": {
 			name:        "map",
@@ -420,6 +438,42 @@ func commandCatch(cfg *config, name string) error {
 	if didCatch {
 		cfg.Pokedex[name] = pokemonStats
 		fmt.Printf("You have caught %s!\n", name)
+	}
+
+	return nil
+}
+
+func commandInspect(cfg *config, name string) error {
+	pokemon, exists := cfg.Pokedex[name]
+	if !exists {
+		return fmt.Errorf("you do not have %s in your Pokedex", name)
+	}
+
+	fmt.Printf("Name: %s\n", pokemon.Name)
+	fmt.Printf("Height: %v\n", pokemon.Height)
+	fmt.Printf("Weight: %v\n", pokemon.Weight)
+
+	fmt.Println("Stats:")
+	for _, stat := range pokemon.Stats {
+		fmt.Printf("  - %s: %v\n", stat.Stat.Name, stat.BaseStat)
+	}
+
+	fmt.Println("Types:")
+	for _, t := range pokemon.Types {
+		fmt.Println("  -", t.Type.Name)
+	}
+
+	return nil
+}
+
+func commandPokedex(cfg *config, _ string) error {
+	if len(cfg.Pokedex) == 0 {
+		return fmt.Errorf("your Pokedex is empty!")
+	}
+
+	fmt.Println("Your Pokedex:")
+	for _, entry := range cfg.Pokedex {
+		fmt.Printf(" - %s\n", entry.Name)
 	}
 
 	return nil
